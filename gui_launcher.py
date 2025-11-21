@@ -98,7 +98,7 @@ class Window(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Поисковик дубликатов")
-        self.resize(900, 600)
+        self.resize(700, 500)
         self.setAcceptDrops(True)
 
         self.folder = None
@@ -106,8 +106,6 @@ class Window(QWidget):
         self.worker = None
         
         self.secondary_text_color = QColor("gray")
-        
-        # Провайдер иконок
         self.icon_provider = QFileIconProvider()
 
         # ---- ВЕРХНЯЯ ПАНЕЛЬ ----
@@ -192,7 +190,6 @@ class Window(QWidget):
         
         self.tree.setAlternatingRowColors(True)
         self.tree.setUniformRowHeights(True)
-        # Увеличиваем размер иконок для заголовков
         self.tree.setIconSize(QSize(18, 18))
 
         tree_layout.addWidget(self.tree)
@@ -334,13 +331,15 @@ class Window(QWidget):
         self.btn_path.setToolTip(path)
         
         self.btn_scan.setEnabled(True)
+        # Сбрасываем текст кнопки
+        self.btn_scan.setText("Сканировать")
         self.btn_scan.setDefault(True)
         self.btn_delete.setDefault(False)
         
         self.bar.setValue(0)
         
         self.lbl_big_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(128, 128))
-        self.lbl_welcome.setText(f"Папка выбрана: {folder_name}\nНажмите 'Сканировать'")
+        self.lbl_welcome.setText(f"Выбранная папка: {folder_name}\nнажмите сканировать")
         self.stack.setCurrentIndex(0)
 
     def choose_folder(self):
@@ -360,13 +359,22 @@ class Window(QWidget):
             return
         if self.thread is not None: return
 
-        self.stack.setCurrentIndex(0)
-        self.lbl_welcome.setText("Идет поиск дубликатов...")
+        # --- ЛОГИКА: Скан или Обновление ---
+        is_update_mode = (self.btn_scan.text() == "Обновить")
+
+        if not is_update_mode:
+            # Первый скан: показываем заглушку "Идет поиск"
+            self.stack.setCurrentIndex(0)
+            self.lbl_welcome.setText("Идет поиск дубликатов...")
+        else:
+            # Обновление: остаемся на дереве
+            self.stack.setCurrentIndex(1)
         
         self.tree.clear()
         self.btn_delete.setEnabled(False)
         self.btn_delete.setDefault(False)
         
+        # Отключаем кнопку на время процесса
         self.btn_scan.setEnabled(False)
         self.btn_scan.setDefault(False)
         
@@ -399,11 +407,14 @@ class Window(QWidget):
             self.folder = None
             self.btn_path.setText("Выберите папку или перетащите её сюда...")
             self.btn_path.setToolTip("")
-            self.lbl_welcome.setText("Дубликатов не найдено.\nВыберите другую папку.")
+            self.lbl_welcome.setText("Дубликатов не найдено\nвыберите другую папку")
             self.lbl_big_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(128, 128))
             
+            # --- КНОПКА ОСТАЕТСЯ НЕАКТИВНОЙ ---
+            self.btn_scan.setText("Сканировать")
             self.btn_scan.setEnabled(False)
             self.btn_scan.setDefault(False)
+            
             self.btn_delete.setEnabled(False)
             self.btn_delete.setDefault(False)
             return
@@ -423,7 +434,6 @@ class Window(QWidget):
             parent = QTreeWidgetItem(self.tree, [header_text])
             parent.setFlags(parent.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             
-            # Иконка для заголовка (ГРУППЫ) - ЕСТЬ
             file_icon = self.icon_provider.icon(QFileInfo(first_file))
             parent.setIcon(0, file_icon)
             
@@ -437,12 +447,13 @@ class Window(QWidget):
                 child.setData(0, Qt.ItemDataRole.UserRole, f)
                 child.setCheckState(0, Qt.CheckState.Unchecked)
                 child.setForeground(0, disabled_brush)
-                # Иконки для дочернего элемента (ФАЙЛА) - НЕТ (Удалено)
 
         self.tree.expandAll()
         self.tree.blockSignals(False)
         self.stack.setCurrentIndex(1)
         self.btn_delete.setEnabled(False)
+        
+        self.btn_scan.setText("Обновить")
 
     @Slot(QTreeWidgetItem, int)
     def on_item_changed(self, item, column):
@@ -473,6 +484,13 @@ class Window(QWidget):
     @Slot()
     def on_finished(self):
         self.bar.setValue(0)
+        # --- ИЗМЕНЕНИЕ: Активируем кнопку только если есть папка (то есть были дубликаты) ---
+        if self.folder:
+            self.btn_scan.setEnabled(True)
+        else:
+            self.btn_scan.setEnabled(False)
+        
+        self.btn_scan.setDefault(False)
 
     @Slot()
     def cleanup(self):
@@ -493,15 +511,24 @@ class Window(QWidget):
                     if full_path: to_delete.append(full_path)
 
         if not to_delete: return
-        reply = QMessageBox.question(self, "Удаление", f"Удалить {len(to_delete)} файлов?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        reply = QMessageBox.question(self, "Удаление", f"Удалить файлы? ({len(to_delete)} шт.)", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
         if reply == QMessageBox.StandardButton.Yes:
+            try:
+                from send2trash import send2trash
+            except ImportError:
+                QMessageBox.critical(self, "Ошибка", "Библиотека send2trash не установлена!\nВыполните: pip install send2trash")
+                return
+
             deleted = 0
             for f in to_delete:
                 try:
-                    os.remove(f)
+                    send2trash(f)
                     deleted += 1
-                except: pass
-            QMessageBox.information(self, "Готово", f"Удалено: {deleted}")
+                except Exception as e:
+                    print(f"Ошибка при удалении {f}: {e}")
+            
             self.start_scan()
 
 if __name__ == "__main__":
