@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QFileIconProvider
 )
 
-# ------------------ ЛОГИКА (Без изменений) ------------------
+# ------------------ ЛОГИКА ПОИСКА ДУБЛИКАТОВ ------------------
 def calculate_file_hash(filepath, hash_algorithm=hashlib.sha256, chunk_size=4096, first_chunk_only=False):
     hasher = hash_algorithm()
     try:
@@ -98,7 +98,7 @@ class Window(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Duplicate Finder")
-        self.resize(600, 400)
+        self.resize(550, 400)
         self.setAcceptDrops(True)
 
         self.folder = None
@@ -324,13 +324,12 @@ class Window(QWidget):
     # ---- Logic ----
     def set_folder(self, path):
         self.folder = path
-        # --- ИЗМЕНЕНИЕ: Используем normpath, чтобы убрать слеш на конце ---
-        # Это решает проблему, когда при Drag&Drop basename возвращает пустоту
+        # Используем normpath, чтобы убрать слеш на конце
         clean_path = os.path.normpath(path)
         folder_name = os.path.basename(clean_path)
         if not folder_name: folder_name = clean_path
         
-        # Устанавливаем ТОЛЬКО имя папки
+        # Устанавливаем имя папки
         self.btn_path.setText(f"Папка: {folder_name}")
         self.btn_path.setToolTip(path)
         
