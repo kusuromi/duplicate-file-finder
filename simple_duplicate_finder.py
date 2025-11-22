@@ -1,20 +1,22 @@
 import os
 import hashlib
 import sys
-import shutil
+
 
 # --- Функции для вывода в терминал ---
-def terminal_output(message, end='\n'):
+def terminal_output(message, end="\n"):
     """Выводит сообщение в терминал сразу"""
     sys.stdout.write(message + end)
     sys.stdout.flush()
 
 
-def calculate_file_hash(filepath, hash_algorithm=hashlib.sha256, chunk_size=4096, first_chunk_only=False):
+def calculate_file_hash(
+    filepath, hash_algorithm=hashlib.sha256, chunk_size=4096, first_chunk_only=False
+):
     """Вычисляет хеш файла. Если first_chunk_only=True, хеширует только первые 4КБ"""
     hasher = hash_algorithm()
     try:
-        with open(filepath, 'rb') as f:
+        with open(filepath, "rb") as f:
             if first_chunk_only:
                 chunk = f.read(4096)
                 hasher.update(chunk)
@@ -42,7 +44,9 @@ def find_duplicate_files_logic(paths):
             terminal_output(f"Предупреждение: Путь '{path}' не существует. Пропускаем.")
             continue
         if not os.path.isdir(path):
-            terminal_output(f"Предупреждение: Путь '{path}' не является директорией. Пропускаем.")
+            terminal_output(
+                f"Предупреждение: Путь '{path}' не является директорией. Пропускаем."
+            )
             continue
 
         for dirpath, _, filenames in os.walk(path):
@@ -58,7 +62,9 @@ def find_duplicate_files_logic(paths):
                     if size == 0:
                         continue
                 except OSError:
-                    terminal_output(f"Ошибка: не удалось получить размер файла {full_path}. Пропускаем.")
+                    terminal_output(
+                        f"Ошибка: не удалось получить размер файла {full_path}. Пропускаем."
+                    )
                     continue
 
                 size_dict.setdefault(size, []).append(full_path)
@@ -104,8 +110,10 @@ def print_duplicates_and_prompt_delete(file_hashes):
 
             # Спрашиваем пользователя, хочет ли удалить дубликаты (оставляем первый файл)
             while True:
-                choice = input("\nУдалить лишние копии этих файлов? (y/n): ").strip().lower()
-                if choice == 'y':
+                choice = (
+                    input("\nУдалить лишние копии этих файлов? (y/n): ").strip().lower()
+                )
+                if choice == "y":
                     for f in files[1:]:
                         try:
                             os.remove(f)
@@ -113,7 +121,7 @@ def print_duplicates_and_prompt_delete(file_hashes):
                         except OSError as e:
                             terminal_output(f"Ошибка при удалении {f}: {e}")
                     break
-                elif choice == 'n':
+                elif choice == "n":
                     break
                 else:
                     terminal_output("Введите y или n.")
@@ -130,4 +138,3 @@ if __name__ == "__main__":
     paths_to_scan = sys.argv[1:] if len(sys.argv) > 1 else ["."]
     duplicates = find_duplicate_files_logic(paths_to_scan)
     print_duplicates_and_prompt_delete(duplicates)
-
