@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import sys
 import os
 import hashlib
@@ -35,7 +34,7 @@ from PyQt6.QtWidgets import (
 )
 
 
-# ------------------ ЛОГИКА ПОИСКА ДУБЛИКАТОВ ------------------
+# ------------------ АЛГОРИТМ ПОИСКА ДУБЛИКАТОВ ------------------
 def calculate_file_hash(
     filepath, hash_algorithm=hashlib.sha256, chunk_size=4096, first_chunk_only=False
 ):
@@ -189,7 +188,7 @@ class Window(QWidget):
         top_widget = QWidget()
         top_widget.setLayout(top_row)
 
-        # ---- Прогрессбар ----
+        # ---- ПРОГРЕССБАР ----
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
         self.bar.setValue(0)
@@ -201,7 +200,7 @@ class Window(QWidget):
         bar_layout.setContentsMargins(15, 0, 15, 10)
         bar_layout.addWidget(self.bar)
 
-        # ---- ЦЕНТРАЛЬНАЯ ЗОНА (STACK) ----
+        # ---- ЦЕНТРАЛЬНАЯ ЗОНА ----
         self.stack = QStackedWidget()
 
         # 1. СТРАНИЦА ЗАГЛУШКИ
