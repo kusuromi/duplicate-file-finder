@@ -22,13 +22,15 @@ def calculate_file_hash(
 
 def find_duplicate_files_logic(paths, progress_callback=None):
     size_dict = {}
-    all_files = []
+    total_files = 0
+
     for path in paths:
         if not os.path.exists(path) or not os.path.isdir(path):
             continue
         for dirpath, _, filenames in os.walk(path):
             for filename in filenames:
                 full_path = os.path.join(dirpath, filename)
+                # Пропускаем системные папки Synology и прочее
                 if "@eaDir" in full_path or "@SynoEAStream" in full_path:
                     continue
                 if os.path.islink(full_path):
@@ -39,12 +41,13 @@ def find_duplicate_files_logic(paths, progress_callback=None):
                         continue
                 except OSError:
                     continue
-                size_dict.setdefault(size, []).append(full_path)
-                all_files.append(full_path)
 
-    total_files = len(all_files)
+                size_dict.setdefault(size, []).append(full_path)
+                total_files += 1
+
     processed_files = 0
     fast_hash_dict = {}
+
     for files in size_dict.values():
         if len(files) < 2:
             processed_files += len(files)

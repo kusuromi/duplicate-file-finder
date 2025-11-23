@@ -146,7 +146,7 @@ class ScanWorker(QObject):
 class Window(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Duplicate Finder")
+        self.setWindowTitle("gui_launcher.py")
         self.resize(550, 400)
         self.setAcceptDrops(True)
 

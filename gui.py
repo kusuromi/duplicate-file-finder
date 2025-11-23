@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
 
 # Импортируем логику из файла algorithm.py
 from algorithm import find_duplicate_files_logic
-
+from send2trash import send2trash
 
 class ScanWorker(QObject):
     result = Signal(dict)
@@ -190,6 +190,7 @@ class Window(QWidget):
             self.update_theme()
         super().changeEvent(event)
 
+
     def update_theme(self):
         pal = self.palette()
 
@@ -267,6 +268,7 @@ class Window(QWidget):
 
         self.update_tree_colors()
 
+
     def update_tree_colors(self):
         pal = self.palette()
         normal_color = pal.color(QPalette.ColorRole.Text)
@@ -292,12 +294,14 @@ class Window(QWidget):
                 if os.path.isdir(path):
                     event.acceptProposedAction()
 
+
     def dropEvent(self, event: QDropEvent):
         urls = event.mimeData().urls()
         if urls:
             path = urls[0].toLocalFile()
             if os.path.isdir(path):
                 self.set_folder(path)
+
 
     # ---- Logic ----
     def set_folder(self, path):
@@ -325,10 +329,12 @@ class Window(QWidget):
         self.lbl_welcome.setText(f"Выбранная папка: {folder_name}\nнажмите сканировать")
         self.stack.setCurrentIndex(0)
 
+
     def choose_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Выбрать папку")
         if folder:
             self.set_folder(folder)
+
 
     def format_size(self, size):
         for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -337,10 +343,9 @@ class Window(QWidget):
             size /= 1024
         return f"{size:.2f} PB"
 
+
     def start_scan(self):
-        if not self.folder:
-            QMessageBox.warning(self, "Ошибка", "Сначала выберите папку.")
-            return
+        #  Не дает запустить новый поиск поверх старого.
         if self.thread is not None:
             return
 
@@ -373,9 +378,11 @@ class Window(QWidget):
         self.thread.finished.connect(self.cleanup)
         self.thread.start()
 
+
     @Slot(int)
     def on_progress(self, value):
         self.bar.setValue(value)
+
 
     @Slot(dict)
     def on_result(self, file_hashes):
@@ -440,6 +447,7 @@ class Window(QWidget):
 
         self.btn_scan.setText("Обновить")
 
+
     @Slot(QTreeWidgetItem, int)
     def on_item_changed(self, item, column):
         if item.childCount() > 0:
@@ -465,9 +473,11 @@ class Window(QWidget):
         else:
             self.btn_delete.setDefault(False)
 
+
     @Slot(str)
     def on_error(self, msg):
         QMessageBox.critical(self, "Ошибка", msg)
+
 
     @Slot()
     def on_finished(self):
@@ -478,6 +488,7 @@ class Window(QWidget):
         else:
             self.btn_scan.setEnabled(False)
 
+
     @Slot()
     def cleanup(self):
         if self.worker is not None:
@@ -486,6 +497,7 @@ class Window(QWidget):
             self.thread.deleteLater()
         self.worker = None
         self.thread = None
+
 
     def delete_selected(self):
         to_delete = []
@@ -510,16 +522,6 @@ class Window(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            try:
-                from send2trash import send2trash
-            except ImportError:
-                QMessageBox.critical(
-                    self,
-                    "Ошибка",
-                    "Библиотека send2trash \nне установлена!\nВыполните:\npip install send2trash",
-                )
-                return
-
             for f in to_delete:
                 try:
                     send2trash(f)
