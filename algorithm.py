@@ -1,36 +1,49 @@
-# algorithm.py
+# algotithm.py
 import os
 import hashlib
 
-# ------------------ АЛГОРИТМ ПОИСКА ДУБЛИКАТОВ ------------------
+
 def calculate_file_hash(
-    filepath, hash_algorithm=hashlib.sha256, chunk_size=4096, first_chunk_only=False
+    filepath, hash_algorithm=hashlib.sha256, chunk_size=4096, first_chunk_only=False, stop_check=None
 ):
     hasher = hash_algorithm()
     try:
         with open(filepath, "rb") as f:
             if first_chunk_only:
+                if stop_check and stop_check(): return None
                 chunk = f.read(4096)
                 hasher.update(chunk)
             else:
                 while chunk := f.read(chunk_size):
+                    if stop_check and stop_check(): return None
                     hasher.update(chunk)
         return hasher.hexdigest()
     except (OSError, IOError):
         return None
 
 
-def find_duplicate_files_logic(paths, progress_callback=None):
+def find_duplicate_files_logic(paths, progress_callback=None, stop_check=None):
+    # ЭТАП 1: Сбор файлов
+    if progress_callback:
+        progress_callback(-1)
+
     size_dict = {}
     total_files = 0
-
+    
     for path in paths:
+        if stop_check and stop_check(): return None
+
         if not os.path.exists(path) or not os.path.isdir(path):
             continue
         for dirpath, _, filenames in os.walk(path):
+            # Проверка перед входом в папку
+            if stop_check and stop_check(): return None
+
             for filename in filenames:
+                # Проверяем отмену на каждом файле
+                if stop_check and stop_check(): return None
+
                 full_path = os.path.join(dirpath, filename)
-                # Пропускаем системные папки Synology и прочее
                 if "@eaDir" in full_path or "@SynoEAStream" in full_path:
                     continue
                 if os.path.islink(full_path):
@@ -41,14 +54,19 @@ def find_duplicate_files_logic(paths, progress_callback=None):
                         continue
                 except OSError:
                     continue
-
+                
                 size_dict.setdefault(size, []).append(full_path)
                 total_files += 1
 
+    # ЭТАП 2: Хеширование
     processed_files = 0
-    fast_hash_dict = {}
+    if progress_callback:
+        progress_callback(0)
 
+    fast_hash_dict = {}
     for files in size_dict.values():
+        if stop_check and stop_check(): return None
+
         if len(files) < 2:
             processed_files += len(files)
             if progress_callback:
@@ -57,7 +75,10 @@ def find_duplicate_files_logic(paths, progress_callback=None):
                 )
             continue
         for f in files:
-            fhash = calculate_file_hash(f, first_chunk_only=True)
+            fhash = calculate_file_hash(f, first_chunk_only=True, stop_check=stop_check)
+            
+            if stop_check and stop_check(): return None
+
             if fhash:
                 fast_hash_dict.setdefault(fhash, []).append(f)
             processed_files += 1
@@ -68,6 +89,8 @@ def find_duplicate_files_logic(paths, progress_callback=None):
 
     full_hash_dict = {}
     for files in fast_hash_dict.values():
+        if stop_check and stop_check(): return None
+
         if len(files) < 2:
             processed_files += len(files)
             if progress_callback:
@@ -76,7 +99,10 @@ def find_duplicate_files_logic(paths, progress_callback=None):
                 )
             continue
         for f in files:
-            full_hash = calculate_file_hash(f, first_chunk_only=False)
+            full_hash = calculate_file_hash(f, first_chunk_only=False, stop_check=stop_check)
+            
+            if stop_check and stop_check(): return None
+
             if full_hash:
                 full_hash_dict.setdefault(full_hash, []).append(f)
             processed_files += 1

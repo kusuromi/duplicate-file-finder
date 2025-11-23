@@ -3,6 +3,7 @@ import os
 from PyQt6.QtCore import (
     QObject,
     QThread,
+    QTimer,
     pyqtSignal as Signal,
     pyqtSlot as Slot,
     Qt,
@@ -29,10 +30,9 @@ from PyQt6.QtWidgets import (
     QTreeWidgetItemIterator,
     QFileIconProvider,
 )
-
-# Импортируем логику из файла algorithm.py
 from algorithm import find_duplicate_files_logic
 from send2trash import send2trash
+
 
 class ScanWorker(QObject):
     result = Signal(dict)
@@ -40,25 +40,38 @@ class ScanWorker(QObject):
     finished = Signal()
     progress = Signal(int)
 
+
     def __init__(self, folder):
         super().__init__()
         self.folder = folder
+        self._is_stopped = False
+
+
+    def stop(self):
+        self._is_stopped = True
+
+
+    def check_stop(self):
+        return self._is_stopped
+
 
     @Slot()
     def run(self):
         try:
-            # Вызываем функцию из algorithm.py
             data = find_duplicate_files_logic(
-                [self.folder], progress_callback=self.progress.emit
+                [self.folder], 
+                progress_callback=self.progress.emit,
+                stop_check=self.check_stop
             )
-            self.result.emit(data)
+            if not self._is_stopped and data is not None:
+                self.result.emit(data)
         except Exception as e:
-            self.error.emit(str(e))
+            if not self._is_stopped:
+                self.error.emit(str(e))
         finally:
             self.finished.emit()
 
 
-# ------------------ GUI ------------------
 class Window(QWidget):
     def __init__(self):
         super().__init__()
@@ -70,17 +83,19 @@ class Window(QWidget):
         self.thread = None
         self.worker = None
 
+        # Таймер для плавного старта загрузки
+        self.loading_timer = QTimer()
+        self.loading_timer.setSingleShot(True)
+        self.loading_timer.setInterval(500)
+        self.loading_timer.timeout.connect(self.enable_infinite_bar)
+
         self.secondary_text_color = QColor("gray")
         self.icon_provider = QFileIconProvider()
 
-        # ---- ВЕРХНЯЯ ПАНЕЛЬ ----
+        # GUI Setup
         self.btn_path = QPushButton("Выберите папку")
-        self.btn_path.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-        )
-        self.btn_path.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
+        self.btn_path.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        self.btn_path.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.btn_path.clicked.connect(self.choose_folder)
 
         self.btn_scan = QPushButton("Сканировать")
@@ -97,114 +112,81 @@ class Window(QWidget):
         top_row.addWidget(self.btn_path)
         top_row.addWidget(self.btn_scan)
         top_row.addWidget(self.btn_delete)
-
         top_row.setContentsMargins(15, 15, 15, 10)
         top_row.setSpacing(10)
-
         top_widget = QWidget()
         top_widget.setLayout(top_row)
 
-        # ---- ПРОГРЕССБАР ----
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
         self.bar.setValue(0)
         self.bar.setTextVisible(False)
         self.bar.setFixedHeight(4)
-
         bar_widget = QWidget()
         bar_layout = QVBoxLayout(bar_widget)
         bar_layout.setContentsMargins(15, 0, 15, 10)
         bar_layout.addWidget(self.bar)
 
-        # ---- ЦЕНТРАЛЬНАЯ ЗОНА ----
         self.stack = QStackedWidget()
 
-        # 1. СТРАНИЦА ЗАГЛУШКИ
         self.page_empty = QFrame()
         self.page_empty.setObjectName("mainFrame")
-
         empty_layout = QVBoxLayout(self.page_empty)
-
         empty_layout.addStretch(1)
-
         self.lbl_big_icon = QLabel()
-        icon_pixmap = (
-            self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(128, 128)
-        )
-        self.lbl_big_icon.setPixmap(icon_pixmap)
+        self.lbl_big_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(128, 128))
         self.lbl_big_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_big_icon.setStyleSheet("background: transparent; border: none;")
-
         self.lbl_welcome = QLabel("Перетащите папку сюда\nдля поиска дубликатов")
         self.lbl_welcome.setWordWrap(True)
-        self.lbl_welcome.setAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter
-        )
+        self.lbl_welcome.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         self.lbl_welcome.setFixedHeight(80)
-
         empty_layout.addWidget(self.lbl_big_icon)
         empty_layout.addWidget(self.lbl_welcome)
-
         empty_layout.addStretch(1)
 
-        # 2. СТРАНИЦА ДЕРЕВА
         self.tree_container = QFrame()
         self.tree_container.setObjectName("mainFrame")
-
         tree_layout = QVBoxLayout(self.tree_container)
         tree_layout.setContentsMargins(0, 0, 0, 0)
         tree_layout.setSpacing(0)
-
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Дубликаты файлов"])
         self.tree.setColumnCount(1)
         self.tree.itemChanged.connect(self.on_item_changed)
         self.tree.setFrameShape(QFrame.Shape.NoFrame)
-
         self.tree.setAlternatingRowColors(True)
         self.tree.setUniformRowHeights(True)
         self.tree.setIconSize(QSize(18, 18))
-
         tree_layout.addWidget(self.tree)
 
         self.stack.addWidget(self.page_empty)
         self.stack.addWidget(self.tree_container)
 
-        # ---- ГЛАВНЫЙ ЛЕЙАУТ ----
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-
         layout.addWidget(top_widget)
         layout.addWidget(bar_widget)
         layout.addWidget(self.stack)
 
         self.update_theme()
 
-    # ---- ОБНОВЛЕНИЕ ТЕМЫ ----
     def changeEvent(self, event):
-        if (
-            event.type() == QEvent.Type.PaletteChange
-            or event.type() == QEvent.Type.StyleChange
-        ):
+        if event.type() == QEvent.Type.PaletteChange or event.type() == QEvent.Type.StyleChange:
             self.update_theme()
         super().changeEvent(event)
 
-
     def update_theme(self):
         pal = self.palette()
-
         bg_color_q = pal.color(QPalette.ColorRole.Base)
         text_color = pal.color(QPalette.ColorRole.Text).name()
         border_color = pal.color(QPalette.ColorRole.Mid).name()
         header_bg = pal.color(QPalette.ColorRole.Button).name()
-
         base_text_color = pal.color(QPalette.ColorRole.Text)
         self.secondary_text_color = QColor(base_text_color)
         self.secondary_text_color.setAlpha(128)
-
         secondary_rgba = f"rgba({self.secondary_text_color.red()}, {self.secondary_text_color.green()}, {self.secondary_text_color.blue()}, {self.secondary_text_color.alpha() / 255})"
-
         is_dark = bg_color_q.lightness() < 128
 
         if is_dark:
@@ -224,7 +206,6 @@ class Window(QWidget):
                 border: none;
                 border-top: 1px solid {border_color_str};
             }}
-            
             QTreeWidget {{
                 background-color: {bg_color_str};
                 alternate-background-color: {alt_bg_str};
@@ -232,14 +213,12 @@ class Window(QWidget):
                 border: none;
                 font-size: 13px;
             }}
-            
             QTreeWidget::item {{
                 padding-top: 6px;
                 padding-bottom: 6px;
                 padding-left: 10px;
                 padding-right: 15px;
             }}
-            
             QHeaderView::section {{
                 background-color: {header_bg_str};
                 color: {text_color};
@@ -252,20 +231,14 @@ class Window(QWidget):
                 padding-right: 15px;
                 font-weight: bold;
             }}
-            
             QTableCornerButton::section {{
                 background-color: {header_bg_str};
                 border: none;
             }}
         """
-
         self.page_empty.setStyleSheet(style_sheet)
         self.tree_container.setStyleSheet(style_sheet)
-
-        self.lbl_welcome.setStyleSheet(
-            f"background: transparent; border: none; color: {secondary_rgba}; font-size: 16px; margin-top: 15px;"
-        )
-
+        self.lbl_welcome.setStyleSheet(f"background: transparent; border: none; color: {secondary_rgba}; font-size: 16px; margin-top: 15px;")
         self.update_tree_colors()
 
 
@@ -273,7 +246,6 @@ class Window(QWidget):
         pal = self.palette()
         normal_color = pal.color(QPalette.ColorRole.Text)
         secondary_brush = QBrush(self.secondary_text_color)
-
         root = self.tree.invisibleRootItem()
         for i in range(root.childCount()):
             group = root.child(i)
@@ -285,7 +257,7 @@ class Window(QWidget):
                 else:
                     child.setForeground(0, secondary_brush)
 
-    # ---- Drag & Drop ----
+
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
@@ -303,16 +275,39 @@ class Window(QWidget):
                 self.set_folder(path)
 
 
-    # ---- Logic ----
     def set_folder(self, path):
+        self.loading_timer.stop()
+        
+        # Остановка текущего процесса
+        if self.thread is not None:
+            self.worker.stop()
+            try:
+                self.worker.result.disconnect()
+                self.worker.progress.disconnect()
+                self.worker.finished.disconnect()
+                self.thread.finished.disconnect()
+            except TypeError:
+                pass
+
+            self.thread.quit()
+            self.thread.wait()
+            self.thread.deleteLater()
+            self.worker.deleteLater()
+            
+            # Сразу зануляем, чтобы on_progress понял, что пора молчать
+            self.thread = None
+            self.worker = None
+
+        # Сброс GUI
+        self.bar.setRange(0, 100)
+        self.bar.setValue(0)
+        
         self.folder = path
-        # Используем normpath, чтобы убрать слеш на конце
         clean_path = os.path.normpath(path)
         folder_name = os.path.basename(clean_path)
         if not folder_name:
             folder_name = clean_path
 
-        # Устанавливаем имя папки
         self.btn_path.setText(f"Папка: {folder_name}")
         self.btn_path.setToolTip(path)
 
@@ -321,11 +316,8 @@ class Window(QWidget):
         self.btn_scan.setDefault(True)
         self.btn_delete.setDefault(False)
 
-        self.bar.setValue(0)
-
-        self.lbl_big_icon.setPixmap(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(128, 128)
-        )
+        self.tree.clear()
+        self.lbl_big_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(128, 128))
         self.lbl_welcome.setText(f"Выбранная папка: {folder_name}\nнажмите сканировать")
         self.stack.setCurrentIndex(0)
 
@@ -345,30 +337,30 @@ class Window(QWidget):
 
 
     def start_scan(self):
-        #  Не дает запустить новый поиск поверх старого.
         if self.thread is not None:
             return
 
         is_update_mode = self.btn_scan.text() == "Обновить"
-
         if not is_update_mode:
             self.stack.setCurrentIndex(0)
-            self.lbl_welcome.setText("Идет поиск дубликатов...")
+            self.lbl_welcome.setText("Подготовка списка файлов...")
         else:
             self.stack.setCurrentIndex(1)
 
         self.tree.clear()
         self.btn_delete.setEnabled(False)
         self.btn_delete.setDefault(False)
-
         self.btn_scan.setEnabled(False)
         self.btn_scan.setDefault(False)
-
+        
+        self.loading_timer.stop()
+        self.bar.setRange(0, 100)
         self.bar.setValue(0)
 
         self.thread = QThread(self)
         self.worker = ScanWorker(self.folder)
         self.worker.moveToThread(self.thread)
+        
         self.thread.started.connect(self.worker.run)
         self.worker.result.connect(self.on_result)
         self.worker.error.connect(self.on_error)
@@ -376,16 +368,45 @@ class Window(QWidget):
         self.worker.progress.connect(self.on_progress)
         self.worker.finished.connect(self.thread.quit)
         self.thread.finished.connect(self.cleanup)
+        
         self.thread.start()
+
+
+    @Slot()
+    def enable_infinite_bar(self):
+        # Запускаем режим "бесконечной загрузки" только если процесс все еще идет
+        if self.worker is not None and self.stack.currentIndex() == 0:
+            self.lbl_welcome.setText("Сбор списка файлов...\n")
+            self.bar.setRange(0, 0)
 
 
     @Slot(int)
     def on_progress(self, value):
-        self.bar.setValue(value)
+        # Если мы уже уничтожили воркер (self.worker is None), 
+        # игнорируем любые старые сигналы, пришедшие из очереди
+        if self.worker is None:
+            return
+
+        if value == -1:
+            if not self.loading_timer.isActive():
+                self.loading_timer.start()
+        else:
+            self.loading_timer.stop()
+            
+            if self.bar.maximum() == 0:
+                self.bar.setRange(0, 100)
+                if self.stack.currentIndex() == 0:
+                    self.lbl_welcome.setText("Сравнение содержимого файлов...")
+            
+            self.bar.setValue(value)
 
 
     @Slot(dict)
     def on_result(self, file_hashes):
+        # Игнорируем результат, если процесс был остановлен
+        if self.worker is None:
+            return
+
         self.tree.blockSignals(True)
         self.tree.clear()
 
@@ -396,12 +417,7 @@ class Window(QWidget):
             self.btn_path.setText("Выберите папку")
             self.btn_path.setToolTip("")
             self.lbl_welcome.setText("Дубликатов не найдено\nвыберите другую папку")
-            self.lbl_big_icon.setPixmap(
-                self.style()
-                .standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-                .pixmap(128, 128)
-            )
-
+            self.lbl_big_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(128, 128))
             self.btn_scan.setText("Сканировать")
             self.btn_scan.setEnabled(False)
             self.btn_scan.setDefault(False)
@@ -410,7 +426,6 @@ class Window(QWidget):
             return
 
         disabled_brush = QBrush(self.secondary_text_color)
-
         for h, files in file_hashes.items():
             first_file = files[0]
             file_name = os.path.basename(first_file)
@@ -424,8 +439,6 @@ class Window(QWidget):
             header_text = f"{file_name} ({size_str}) — копий: {len(files)}"
             parent = QTreeWidgetItem(self.tree, [header_text])
             parent.setFlags(parent.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-
-            # Иконка для заголовка
             file_icon = self.icon_provider.icon(QFileInfo(first_file))
             parent.setIcon(0, file_icon)
 
@@ -434,7 +447,6 @@ class Window(QWidget):
                     display_text = os.path.relpath(f, self.folder)
                 except ValueError:
                     display_text = f
-
                 child = QTreeWidgetItem(parent, [display_text])
                 child.setData(0, Qt.ItemDataRole.UserRole, f)
                 child.setCheckState(0, Qt.CheckState.Unchecked)
@@ -444,7 +456,6 @@ class Window(QWidget):
         self.tree.blockSignals(False)
         self.stack.setCurrentIndex(1)
         self.btn_delete.setEnabled(False)
-
         self.btn_scan.setText("Обновить")
 
 
@@ -453,34 +464,29 @@ class Window(QWidget):
         if item.childCount() > 0:
             return
         pal = self.palette()
-
         if item.checkState(0) == Qt.CheckState.Checked:
             item.setForeground(0, QBrush(pal.color(QPalette.ColorRole.Text)))
         else:
             item.setForeground(0, QBrush(self.secondary_text_color))
-
+        
         has_checked = False
-        iterator = QTreeWidgetItemIterator(
-            self.tree, QTreeWidgetItemIterator.IteratorFlag.Checked
-        )
+        iterator = QTreeWidgetItemIterator(self.tree, QTreeWidgetItemIterator.IteratorFlag.Checked)
         if iterator.value():
             has_checked = True
-
         self.btn_delete.setEnabled(has_checked)
-
-        if has_checked:
-            self.btn_delete.setDefault(True)
-        else:
-            self.btn_delete.setDefault(False)
+        self.btn_delete.setDefault(has_checked)
 
 
     @Slot(str)
     def on_error(self, msg):
-        QMessageBox.critical(self, "Ошибка", msg)
+        if self.worker is not None:
+            QMessageBox.critical(self, "Ошибка", msg)
 
 
     @Slot()
     def on_finished(self):
+        self.loading_timer.stop()
+        self.bar.setRange(0, 100)
         self.bar.setValue(0)
         if self.folder:
             self.btn_scan.setEnabled(True)
@@ -510,22 +516,13 @@ class Window(QWidget):
                     full_path = child.data(0, Qt.ItemDataRole.UserRole)
                     if full_path:
                         to_delete.append(full_path)
-
         if not to_delete:
             return
-
-        reply = QMessageBox.question(
-            self,
-            "Удаление",
-            f"Удалить файлы? ({len(to_delete)} шт.)",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-
+        reply = QMessageBox.question(self, "Удаление", f"Удалить файлы? ({len(to_delete)} шт.)", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             for f in to_delete:
                 try:
                     send2trash(f)
                 except Exception as e:
                     print(f"Ошибка при удалении {f}: {e}")
-
             self.start_scan()
