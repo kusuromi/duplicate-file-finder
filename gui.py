@@ -1,4 +1,3 @@
-# gui.py
 import os
 from PyQt6.QtCore import (
     QObject,
@@ -40,20 +39,16 @@ class ScanWorker(QObject):
     finished = Signal()
     progress = Signal(int)
 
-
     def __init__(self, folder):
         super().__init__()
         self.folder = folder
         self._is_stopped = False
 
-
     def stop(self):
         self._is_stopped = True
 
-
     def check_stop(self):
         return self._is_stopped
-
 
     @Slot()
     def run(self):
@@ -83,7 +78,6 @@ class Window(QWidget):
         self.thread = None
         self.worker = None
 
-        # Таймер для плавного старта загрузки
         self.loading_timer = QTimer()
         self.loading_timer.setSingleShot(True)
         self.loading_timer.setInterval(500)
@@ -92,7 +86,6 @@ class Window(QWidget):
         self.secondary_text_color = QColor("gray")
         self.icon_provider = QFileIconProvider()
 
-        # GUI Setup
         self.btn_path = QPushButton("Выберите папку")
         self.btn_path.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
         self.btn_path.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -172,10 +165,12 @@ class Window(QWidget):
 
         self.update_theme()
 
+
     def changeEvent(self, event):
         if event.type() == QEvent.Type.PaletteChange or event.type() == QEvent.Type.StyleChange:
             self.update_theme()
         super().changeEvent(event)
+
 
     def update_theme(self):
         pal = self.palette()
@@ -278,7 +273,6 @@ class Window(QWidget):
     def set_folder(self, path):
         self.loading_timer.stop()
         
-        # Остановка текущего процесса
         if self.thread is not None:
             self.worker.stop()
             try:
@@ -294,11 +288,9 @@ class Window(QWidget):
             self.thread.deleteLater()
             self.worker.deleteLater()
             
-            # Сразу зануляем, чтобы on_progress понял, что пора молчать
             self.thread = None
             self.worker = None
 
-        # Сброс GUI
         self.bar.setRange(0, 100)
         self.bar.setValue(0)
         
@@ -313,7 +305,10 @@ class Window(QWidget):
 
         self.btn_scan.setEnabled(True)
         self.btn_scan.setText("Сканировать")
+        
         self.btn_scan.setDefault(True)
+        
+        self.btn_delete.setEnabled(False)
         self.btn_delete.setDefault(False)
 
         self.tree.clear()
@@ -374,7 +369,6 @@ class Window(QWidget):
 
     @Slot()
     def enable_infinite_bar(self):
-        # Запускаем режим "бесконечной загрузки" только если процесс все еще идет
         if self.worker is not None and self.stack.currentIndex() == 0:
             self.lbl_welcome.setText("Сбор списка файлов...\n")
             self.bar.setRange(0, 0)
@@ -382,8 +376,6 @@ class Window(QWidget):
 
     @Slot(int)
     def on_progress(self, value):
-        # Если мы уже уничтожили воркер (self.worker is None), 
-        # игнорируем любые старые сигналы, пришедшие из очереди
         if self.worker is None:
             return
 
@@ -403,7 +395,6 @@ class Window(QWidget):
 
     @Slot(dict)
     def on_result(self, file_hashes):
-        # Игнорируем результат, если процесс был остановлен
         if self.worker is None:
             return
 
@@ -473,8 +464,16 @@ class Window(QWidget):
         iterator = QTreeWidgetItemIterator(self.tree, QTreeWidgetItemIterator.IteratorFlag.Checked)
         if iterator.value():
             has_checked = True
+        
         self.btn_delete.setEnabled(has_checked)
-        self.btn_delete.setDefault(has_checked)
+
+        if has_checked:
+            self.btn_delete.setDefault(True)
+            self.btn_scan.setDefault(False)
+        else:
+            self.btn_delete.setDefault(False)
+            is_scan = self.btn_scan.text() == "Сканировать"
+            self.btn_scan.setDefault(is_scan)
 
 
     @Slot(str)
@@ -490,7 +489,8 @@ class Window(QWidget):
         self.bar.setValue(0)
         if self.folder:
             self.btn_scan.setEnabled(True)
-            self.btn_scan.setDefault(False)
+            is_scan = self.btn_scan.text() == "Сканировать"
+            self.btn_scan.setDefault(is_scan)
         else:
             self.btn_scan.setEnabled(False)
 

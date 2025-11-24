@@ -1,4 +1,3 @@
-# algotithm.py
 import os
 import hashlib
 
@@ -36,11 +35,9 @@ def find_duplicate_files_logic(paths, progress_callback=None, stop_check=None):
         if not os.path.exists(path) or not os.path.isdir(path):
             continue
         for dirpath, _, filenames in os.walk(path):
-            # Проверка перед входом в папку
             if stop_check and stop_check(): return None
 
             for filename in filenames:
-                # Проверяем отмену на каждом файле
                 if stop_check and stop_check(): return None
 
                 full_path = os.path.join(dirpath, filename)
