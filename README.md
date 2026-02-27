@@ -9,5 +9,6 @@ Simple Python tool to scan a directory and list duplicate files.
 ```bash
 git clone https://github.com/kusuromi/duplicate-file-finder
 cd duplicate-file-finder
-pip install -r requirements.txt
-python main.py
+uv sync
+uv run gui_launcher.py
+
